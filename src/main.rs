@@ -12,6 +12,7 @@ fn main() -> Result<()> {
         "CREATE TABLE IF NOT EXISTS summary (
             id INTEGER PRIMARY KEY,
             datetime TEXT NOT NULL UNIQUE,
+            date TEXT NOT NULL,
             with_balance INTEGER NOT NULL,
             without_balance INTEGER NOT NULL
         )",
@@ -45,14 +46,16 @@ fn main() -> Result<()> {
                 if let (Some(Ok(line2)), Some(Ok(line3))) = (lines.next(), lines.next()) {
                     if with_balance_regex.is_match(&line2) && without_balance_regex.is_match(&line3) {
                         let datetime_str = &caps[1];
-                        let datetime = NaiveDateTime::parse_from_str(datetime_str, "%Y-%m-%d %H:%M:%S").unwrap();
+                        let datetime = NaiveDateTime::parse_from_str(datetime_str, "%Y-%m-%d %H:%M:%S")
+                            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+                        let previous_day_date = (datetime.date() - chrono::Duration::days(1)).to_string();
 
                         let with_balance = with_balance_regex.captures(&line2).and_then(|c| c[1].parse::<i32>().ok()).unwrap_or(0);
                         let without_balance = without_balance_regex.captures(&line3).and_then(|c| c[1].parse::<i32>().ok()).unwrap_or(0);
 
                         conn.execute(
-                            "INSERT OR IGNORE INTO summary (datetime, with_balance, without_balance) VALUES (?1, ?2, ?3)",
-                            params![datetime.to_string(), with_balance, without_balance],
+                            "INSERT OR IGNORE INTO summary (datetime, date, with_balance, without_balance) VALUES (?1, ?2, ?3, ?4)",
+                            params![datetime.to_string(), previous_day_date, with_balance, without_balance],
                         )?;
 
                         conn.execute(
